@@ -1,7 +1,9 @@
-from datetime import timezone
-
+from django.utils import timezone
 from django.shortcuts import render
-from blog.models import Car, Booking, User
+from .models import Car, Booking, Payment, User
+
+from rest_framework import viewsets
+from .serializers import CarSerializer, BookingSerializer, PaymentSerializer, UserSerializer
 
 # Создание новой машины
 def create_car(brand, model, year, description, price, categories):
@@ -43,3 +45,19 @@ def cancel_booking(booking_id):
     booking.order_status = 'canceled'
     booking.save()
     return booking
+
+class CarViewSet(viewsets.ModelViewSet):
+    queryset = Car.objects.all()
+    serializer_class = CarSerializer
+
+class BookingViewSet(viewsets.ModelViewSet):
+    queryset = Booking.objects.all()
+    serializer_class = BookingSerializer
+
+class PaymentViewSet(viewsets.ModelViewSet):
+    queryset = Payment.objects.all()
+    serializer_class = PaymentSerializer
+
+class UserViewSet(viewsets.ModelViewSet):
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
