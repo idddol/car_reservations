@@ -1,0 +1,45 @@
+{% extends 'blog/base.html' %}
+{% block title %}Вход через API{% endblock %}
+
+{% block content %}
+<h2>Вход</h2>
+
+<form id="loginForm">
+    <label>Email:</label><br>
+    <input type="email" name="email" required><br>
+
+    <label>Пароль:</label><br>
+    <input type="password" name="password" required><br>
+
+    <button type="submit">Войти</button>
+</form>
+
+<p id="loginError" style="color:red;"></p>
+
+<script>
+document.getElementById("loginForm").addEventListener("submit", async function(e) {
+    e.preventDefault();
+
+    const email = this.email.value;
+    const password = this.password.value;
+
+    const response = await fetch("/api/token/", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ email, password })
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+        localStorage.setItem("access", data.access);
+        localStorage.setItem("refresh", data.refresh);
+        window.location.href = "/api/site/profile/"; // переходим в личный кабинет
+    } else {
+        document.getElementById("loginError").innerText = data.detail || "Ошибка входа";
+    }
+});
+</script>
+{% endblock %}

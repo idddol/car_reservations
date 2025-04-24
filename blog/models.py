@@ -52,10 +52,20 @@ class Car(models.Model):
 
 
 class Booking(models.Model):
+    ORDER_STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('confirmed', 'Confirmed'),
+        ('canceled', 'Canceled'),
+    ]
+
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     car = models.ForeignKey(Car, on_delete=models.CASCADE)
     order_date = models.DateField()
-    order_status = models.CharField(max_length=45)
+    order_status = models.CharField(
+        max_length=20,
+        choices=ORDER_STATUS_CHOICES,
+        default= 'pending'  # Статус по умолчанию
+    )
     rental_start_date = models.DateField()
     rental_end_date = models.DateField()
     rental_cost = models.IntegerField()
@@ -65,11 +75,39 @@ class Booking(models.Model):
 
 
 class Payment(models.Model):
-    booking = models.ForeignKey(Booking, on_delete=models.CASCADE)
-    payment_date = models.DateField()
-    amount = models.IntegerField()
-    payment_method = models.CharField(max_length=45)
-    payment_status = models.CharField(max_length=45)
+    PAYMENT_STATUS_CHOICES = [
+        ('uncompleted', 'Uncompleted'),
+        ('completed', 'Completed'),
+    ]
 
-    def __str__(self):
+    PAYMENT_METHOD_CHOICES = [
+        ('cash', 'Cash'),
+        ('card', 'Card'),
+        ('crypto', 'Crypto'),
+    ]
+
+    booking = models.ForeignKey(
+        'Booking',
+        on_delete=models.CASCADE,
+        related_name='payments'
+    )
+    payment_date = models.DateField(auto_now_add=True)
+    amount = models.IntegerField(blank=True, null=True)
+    payment_method = models.CharField(
+        max_length=45,
+        choices=PAYMENT_METHOD_CHOICES
+    )
+    payment_status = models.CharField(
+        max_length=45,
+        choices=PAYMENT_STATUS_CHOICES,
+        default='uncompleted'
+    )
+
+    def save(self, *args, **kwargs):
+        # Автоматически устанавливаем сумму из бронирования
+        if not self.amount and self.booking:
+            self.amount = self.booking.rental_cost
+        super().save(*args, **kwargs)
+
+    def str(self):
         return f"Payment {self.id} - {self.payment_status}"

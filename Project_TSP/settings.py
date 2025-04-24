@@ -121,6 +121,8 @@ USE_TZ = True
 
 AUTH_USER_MODEL = 'blog.User'
 
+LOGIN_URL = '/api/site/login/'
+
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',

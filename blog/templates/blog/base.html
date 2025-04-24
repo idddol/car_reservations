@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>{% block title %}Автопрокат{% endblock %}</title>
+</head>
+<body>
+    <nav id="navbar">
+        <!-- Здесь будет JS-навигация -->
+    </nav>
+    <hr>
+    {% block content %}{% endblock %}
+
+<script>
+function logout() {
+    localStorage.clear();
+    window.location.href = "/api/site/login/";
+}
+
+function renderNavbar() {
+    const token = localStorage.getItem("access");
+    const navbar = document.getElementById("navbar");
+
+    if (token) {
+        navbar.innerHTML = `
+            <a href="/api/site/cars/">Машины</a> |
+            <a href="/api/site/profile/">Профиль</a> |
+            <a href="#" onclick="logout()">Выйти</a>
+        `;
+    } else {
+        navbar.innerHTML = `
+            <a href="/api/site/cars/">Машины</a> |
+            <a href="/api/site/register/">Регистрация</a> |
+            <a href="/api/site/login/">Вход</a>
+        `;
+    }
+}
+
+renderNavbar();
+</script>
+</body>
+</html>
+
+

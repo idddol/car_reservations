@@ -1,0 +1,65 @@
+{% extends 'blog/base.html' %}
+{% block title %}Оплата бронирования{% endblock %}
+
+{% block content %}
+<h2>Оплата бронирования</h2>
+
+{% if payment %}
+    <p><strong>Сумма:</strong> {{ payment.amount }} ₽</p>
+    <p><strong>Статус:</strong> {{ payment.get_status_display }}</p>
+
+    {% if payment.status != 'completed' %}
+    <form id="paymentForm">
+        <label for="method">Способ оплаты:</label>
+        <select id="method" required>
+            <option value="cash">Наличные</option>
+            <option value="card">Карта</option>
+            <option value="crypto">Криптовалюта</option>
+        </select>
+        <br><br>
+        <button type="submit">Оплатить</button>
+        <p id="message" style="color: green;"></p>
+    </form>
+    {% else %}
+        <p>Платёж уже завершён ✅</p>
+    {% endif %}
+
+{% else %}
+    <p>Платёж не найден.</p>
+{% endif %}
+
+<script>
+const form = document.getElementById('paymentForm');
+if (form) {
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const method = document.getElementById('method').value;
+        const access = localStorage.getItem("access");
+
+        const response = await fetch(`/api/payments/{{ payment.id }}/`, {
+            method: "PATCH",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${access}`
+            },
+            body: JSON.stringify({
+                method: method,
+                status: "completed"
+            })
+        });
+
+        const message = document.getElementById('message');
+        if (response.ok) {
+            message.innerText = "Платёж успешно завершён!";
+            setTimeout(() => {
+                window.location.href = "/api/site/profile/";
+            }, 1500);
+        } else {
+            message.style.color = "red";
+            message.innerText = "Ошибка при оплате.";
+        }
+    });
+}
+</script>
+{% endblock %}

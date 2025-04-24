@@ -1,0 +1,66 @@
+{% extends 'blog/base.html' %}
+{% block title %}Бронирование машины{% endblock %}
+
+{% block content %}
+<h2>Бронирование машины</h2>
+
+<p><strong>Машина:</strong> {{ car.brand }} {{ car.model }}</p>
+<p><strong>Цена:</strong> {{ car.price }} ₽/день</p>
+
+<form id="bookingForm" data-car-id="{{ car.id }}">
+    <label>Дата начала аренды:
+        <input type="date" id="start_date" required>
+    </label>
+    <br>
+    <label>Дата окончания аренды:
+        <input type="date" id="end_date" required>
+    </label>
+    <br><br>
+    <button type="submit">Забронировать</button>
+    <p id="errorMessage" style="color:red;"></p>
+</form>
+
+<script>
+document.getElementById("bookingForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const token = localStorage.getItem("access");
+    const carId = parseInt(document.getElementById("bookingForm").dataset.carId);
+    const startDate = document.getElementById("start_date").value;
+    const endDate = document.getElementById("end_date").value;
+    const errorMessage = document.getElementById("errorMessage");
+
+    if (!token) {
+        window.location.href = "/api/site/login/";
+        return;
+    }
+
+    const response = await fetch("/api/bookings/", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+            car: carId,
+            rental_start_date: startDate,
+            rental_end_date: endDate
+        })
+    });
+
+    if (response.ok) {
+        const data = await response.json();
+        window.location.href = `/api/site/payment/${data.id}/`;
+    } else {
+        try {
+            const errorData = await response.json();
+            console.error("Ошибка бронирования:", errorData);
+            errorMessage.innerText = "Ошибка: " + JSON.stringify(errorData);
+        } catch (e) {
+            errorMessage.innerText = "Ошибка бронирования.";
+        }
+    }
+});
+</script>
+{% endblock %}
+

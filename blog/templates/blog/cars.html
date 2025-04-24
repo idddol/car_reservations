@@ -1,0 +1,80 @@
+{% extends 'blog/base.html' %}
+{% block title %}Список машин{% endblock %}
+
+{% block content %}
+<h2>Машины (из API)</h2>
+
+<ul id="carList">
+    <li>Загрузка...</li>
+</ul>
+
+<script>
+async function loadCars() {
+    const access = localStorage.getItem("access");
+
+    const response = await fetch("/api/cars/", {
+        headers: access ? { "Authorization": `Bearer ${access}` } : {}
+    });
+
+    const carList = document.getElementById("carList");
+    carList.innerHTML = "";
+
+    if (!response.ok) {
+        carList.innerHTML = "<li>Ошибка загрузки машин</li>";
+        return;
+    }
+
+    const data = await response.json();
+
+    if (data.length === 0) {
+        carList.innerHTML = "<li>Нет доступных машин</li>";
+    } else {
+        data.forEach(car => {
+            const item = document.createElement("li");
+
+            item.innerHTML = `
+                <strong>${car.brand} ${car.model}</strong> (${car.year_of_release}) —
+                ${car.price}₽/день
+            `;
+
+            const button = document.createElement("button");
+            button.innerText = "Забронировать";
+
+            button.onclick = async () => {
+                const token = localStorage.getItem("access");
+
+                if (!token) {
+                    window.location.href = "/api/site/login/";
+                    return;
+                }
+
+                try {
+                    const check = await fetch("/api/token/verify/", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ token })
+                    });
+
+                    if (check.ok) {
+                        window.location.href = `/api/site/booking/${car.id}/`;
+                    } else {
+                        localStorage.clear();
+                        window.location.href = "/api/site/login/";
+                    }
+                } catch (error) {
+                    console.error("Ошибка:", error);
+                    localStorage.clear();
+                    window.location.href = "/api/site/login/";
+                }
+            };
+
+            item.appendChild(document.createElement("br"));
+            item.appendChild(button);
+            carList.appendChild(item);
+        });
+    }
+}
+
+loadCars();
+</script>
+{% endblock %}

@@ -1,0 +1,120 @@
+{% extends 'blog/base.html' %}
+{% block title %}Профиль{% endblock %}
+
+{% block content %}
+<h2>Личный кабинет</h2>
+
+<div id="userInfo">
+    <p><strong>Имя:</strong> <span id="userName">Загрузка...</span></p>
+    <p><strong>Email:</strong> <span id="userEmail">Загрузка...</span></p>
+</div>
+
+<hr>
+
+<h3>Мои бронирования:</h3>
+<ul id="bookingList"><li>Загрузка...</li></ul>
+
+<h3>Мои платежи:</h3>
+<ul id="paymentList"><li>Загрузка...</li></ul>
+
+<script>
+const token = localStorage.getItem("access");
+
+async function verifyToken() {
+    if (!token) {
+        window.location.href = "/api/site/login/";
+        return false;
+    }
+
+    const res = await fetch("/api/token/verify/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token })
+    });
+
+    if (!res.ok) {
+        localStorage.clear();
+        window.location.href = "/api/site/login/";
+        return false;
+    }
+
+    return true;
+}
+
+async function loadUser() {
+    const res = await fetch("/api/users/me/", {
+        headers: { "Authorization": `Bearer ${token}` }
+    });
+
+    const data = await res.json();
+    document.getElementById("userName").innerText = data.name || "—";
+    document.getElementById("userEmail").innerText = data.email || "—";
+}
+
+async function loadBookings() {
+    const bookingRes = await fetch("/api/bookings/", {
+        headers: { "Authorization": `Bearer ${token}` }
+    });
+    const paymentRes = await fetch("/api/payments/", {
+        headers: { "Authorization": `Bearer ${token}` }
+    });
+
+    const bookings = await bookingRes.json();
+    const payments = await paymentRes.json();
+
+    const list = document.getElementById("bookingList");
+    list.innerHTML = "";
+
+    if (bookings.length === 0) {
+        list.innerHTML = "<li>Бронирований нет</li>";
+    } else {
+        bookings.forEach(b => {
+            const payment = payments.find(p => p.booking == b.id);
+            const isPaid = ["paid", "completed"].includes(payment?.payment_status);
+            const paidStatus = isPaid ? "✅ оплачено" : "❌ не оплачено";
+
+            const item = document.createElement("li");
+            item.innerHTML = `
+                <strong>${b.car.brand} ${b.car.model}</strong><br>
+                ${b.rental_start_date} → ${b.rental_end_date}<br>
+                Статус брони: ${b.order_status}<br>
+                Оплата: ${paidStatus}
+                 ${!isPaid ? `<br><a href="/api/site/payment/${b.id}/">💳 Оплатить</a>` : ""}
+            `;
+            list.appendChild(item);
+        });
+    }
+}
+
+async function loadPayments() {
+    const res = await fetch("/api/payments/", {
+        headers: { "Authorization": `Bearer ${token}` }
+    });
+
+    const data = await res.json();
+    const list = document.getElementById("paymentList");
+    list.innerHTML = "";
+
+    if (data.length === 0) {
+        list.innerHTML = "<li>Платежей нет</li>";
+    } else {
+        data.forEach(p => {
+            const item = document.createElement("li");
+            item.innerText = `${p.amount}₽ — ${p.payment_method} — ${p.payment_status}`;
+            list.appendChild(item);
+        });
+    }
+}
+
+async function init() {
+    const valid = await verifyToken();
+    if (valid) {
+        await loadUser();
+        await loadBookings();
+        await loadPayments();
+    }
+}
+
+init();
+</script>
+{% endblock %}

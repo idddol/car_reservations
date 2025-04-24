@@ -1,3 +1,4 @@
+from rest_framework.decorators import action
 from django.utils import timezone
 from django.shortcuts import render
 from .models import Car, Booking, Payment, User
@@ -9,6 +10,10 @@ from rest_framework.permissions import AllowAny
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.hashers import check_password
+
+from django.contrib import messages
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib.auth import authenticate
 
 
 from .permissions import IsSelfOrAdmin, IsAdminOrReadOnly, IsOwnerCanEditOnly
@@ -69,6 +74,11 @@ class UserViewSet(viewsets.ModelViewSet):
             return [IsAuthenticated(), IsSelfOrAdmin()]
         return [IsAuthenticated()]
 
+    @action(detail=False, methods=["get"], permission_classes=[IsAuthenticated])
+    def me(self, request):
+        serializer = self.get_serializer(request.user)
+        return Response(serializer.data)
+
 class CarViewSet(viewsets.ModelViewSet):
     queryset = Car.objects.all()
     serializer_class = CarSerializer
@@ -86,7 +96,16 @@ class BookingViewSet(viewsets.ModelViewSet):
         return Booking.objects.filter(user=user)  # обычный юзер — только свои
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        booking = serializer.save(user=self.request.user)
+
+        # Создаём платёж для этой брони
+        Payment.objects.create(
+            booking=booking,
+            amount=booking.rental_cost,
+            payment_method='card',
+            payment_status='uncompleted'
+        )
+
 
 class PaymentViewSet(viewsets.ModelViewSet):
     queryset = Payment.objects.all()  # ← ОБЯЗАТЕЛЬНО router.register(..., ViewSet) пытается получить basename из queryset.model А если queryset = ... не задан — он не знает, как это сделать
@@ -164,3 +183,80 @@ class LogoutView(APIView):
             return Response({"detail": "Successfully logged out"}, status=205)
         except Exception as e:
             return Response({"detail": "Invalid token"}, status=400)
+
+
+
+#---------------------------Страницы---------------------------
+def register_page(request):
+    if request.method == 'POST':
+        email = request.POST.get('email')
+        name = request.POST.get('name')
+        password = request.POST.get('password')
+
+        if User.objects.filter(email=email).exists():
+            messages.error(request, 'Пользователь с таким email уже существует')
+            return redirect('register-page')
+
+        user = User.objects.create_user(email=email, name=name, password=password)
+        messages.success(request, 'Регистрация прошла успешно! Теперь войдите')
+        return redirect('login-page')
+
+    return render(request, 'blog/register.html')
+
+
+def login_page(request):
+    if request.method == 'POST':
+        email = request.POST.get('email')
+        password = request.POST.get('password')
+
+        user = authenticate(request, email=email, password=password)
+
+        if user is not None:
+            refresh = RefreshToken.for_user(user)
+            request.session['access'] = str(refresh.access_token)
+            request.session['refresh'] = str(refresh)
+            request.session['user_id'] = user.id
+            return redirect('profile-page')
+        else:
+            messages.error(request, 'Неверный email или пароль')
+
+    return render(request, 'blog/login.html')
+
+
+def profile_page(request):
+    return render(request, 'blog/profile.html')
+
+def cars_page(request):
+    cars = Car.objects.all()
+    return render(request, 'blog/cars.html', {'cars': cars})
+
+
+def booking_page(request, car_id):
+    car = get_object_or_404(Car, id=car_id)
+    return render(request, 'blog/booking.html', {'car': car})
+
+def payment_page(request, booking_id):
+    try:
+        booking = Booking.objects.get(id=booking_id)
+        payment = Payment.objects.get(booking=booking)
+    except Payment.DoesNotExist:
+        payment = None
+
+    return render(request, 'blog/payment.html', {
+        'booking_id': booking_id,
+        'payment': payment
+    })
+
+def delete_booking(request, booking_id):
+    user_id = request.session.get('user_id')
+    if not user_id:
+        return redirect('login-page')  # если не авторизован
+
+    booking = get_object_or_404(Booking, id=booking_id)
+
+    if booking.user.id != user_id:
+        return redirect('profile-page')  # нельзя удалять чужую бронь
+
+    if request.method == 'POST':
+        booking.delete()  # удалит и платёж из-за on_delete=models.CASCADE
+        return redirect('profile-page')
