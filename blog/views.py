@@ -1,7 +1,7 @@
 from rest_framework.decorators import action
 from django.utils import timezone
 from django.shortcuts import render
-from .models import Car, Booking, Payment, User
+from .models import Car, Booking, Payment, User, CarImage
 
 from rest_framework import viewsets, status
 from rest_framework.response import Response
@@ -9,6 +9,7 @@ from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.contrib.auth.hashers import check_password
 
 from django.contrib import messages
@@ -16,8 +17,9 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import authenticate
 
 
+
 from .permissions import IsSelfOrAdmin, IsAdminOrReadOnly, IsOwnerCanEditOnly
-from .serializers import CarSerializer, BookingSerializer, PaymentSerializer, UserSerializer
+from .serializers import CarSerializer, BookingReadSerializer, BookingWriteSerializer, PaymentSerializer, UserSerializer, CarImageSerializer
 
 
 # Создание новой машины
@@ -83,34 +85,47 @@ class CarViewSet(viewsets.ModelViewSet):
     queryset = Car.objects.all()
     serializer_class = CarSerializer
     permission_classes = [IsAdminOrReadOnly]
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
+
+class CarImageViewSet(viewsets.ModelViewSet):
+    queryset = CarImage.objects.all()
+    serializer_class = CarImageSerializer
+    permission_classes = [IsAdminUser]
 
 class BookingViewSet(viewsets.ModelViewSet):
-    queryset = Booking.objects.all()  # ← ОБЯЗАТЕЛЬНО
-    serializer_class = BookingSerializer
+    queryset = Booking.objects.all()
     permission_classes = [IsAuthenticated]
+
+    def get_serializer_class(self):
+        if self.request.method == 'GET':
+            return BookingReadSerializer
+        return BookingWriteSerializer
 
     def get_queryset(self):
         user = self.request.user
         if user.is_staff:
-            return Booking.objects.all()  # админ видит всё
-        return Booking.objects.filter(user=user)  # обычный юзер — только свои
+            return Booking.objects.all()
+        return Booking.objects.filter(user=user)
 
     def perform_create(self, serializer):
         booking = serializer.save(user=self.request.user)
-
-        # Создаём платёж для этой брони
-        Payment.objects.create(
-            booking=booking,
-            amount=booking.rental_cost,
-            payment_method='card',
-            payment_status='uncompleted'
-        )
-
+        # Payment.objects.create(
+        #     booking=booking,
+        #     amount=booking.rental_cost,
+        #     payment_method='card',
+        #     payment_status='uncompleted'
+        # )
 
 class PaymentViewSet(viewsets.ModelViewSet):
     queryset = Payment.objects.all()  # ← ОБЯЗАТЕЛЬНО router.register(..., ViewSet) пытается получить basename из queryset.model А если queryset = ... не задан — он не знает, как это сделать
     serializer_class = PaymentSerializer
     permission_classes = [IsAuthenticated, IsOwnerCanEditOnly]
+
+    def create(self, request, *args, **kwargs):
+        booking_id = request.data.get('booking')
+        if Payment.objects.filter(booking_id=booking_id).exists():
+            return Response({'detail': 'Платёж уже существует для этого бронирования'}, status=400)
+        return super().create(request, *args, **kwargs)
 
     def get_queryset(self):
         user = self.request.user
@@ -209,6 +224,10 @@ def login_page(request):
         email = request.POST.get('email')
         password = request.POST.get('password')
 
+        if not email or not password:
+            messages.error(request, 'Поля не должны быть пустыми')
+            return redirect('login-page')
+
         user = authenticate(request, email=email, password=password)
 
         if user is not None:
@@ -236,27 +255,42 @@ def booking_page(request, car_id):
     return render(request, 'blog/booking.html', {'car': car})
 
 def payment_page(request, booking_id):
-    try:
-        booking = Booking.objects.get(id=booking_id)
-        payment = Payment.objects.get(booking=booking)
-    except Payment.DoesNotExist:
-        payment = None
+    booking = get_object_or_404(Booking, id=booking_id)
+
+    # Пытаемся получить платёж
+    payment = Payment.objects.filter(booking=booking).first()
+
+    # # Если платежа нет — создаём его сразу
+    # if not payment:
+    #     payment = Payment.objects.create(
+    #         booking=booking,
+    #         amount=booking.rental_cost,
+    #         payment_method='card',  # временно ставим по умолчанию
+    #         payment_status='uncompleted'
+    #     )
 
     return render(request, 'blog/payment.html', {
         'booking_id': booking_id,
         'payment': payment
     })
 
+
 def delete_booking(request, booking_id):
     user_id = request.session.get('user_id')
     if not user_id:
-        return redirect('login-page')  # если не авторизован
+        return redirect('login-page')
 
-    booking = get_object_or_404(Booking, id=booking_id)
+    try:
+        booking = Booking.objects.get(id=booking_id)
+    except Booking.DoesNotExist:
+        messages.error(request, "Бронирование не найдено.")
+        return redirect('profile-page')
 
     if booking.user.id != user_id:
-        return redirect('profile-page')  # нельзя удалять чужую бронь
+        messages.error(request, "Вы не можете удалить это бронирование.")
+        return redirect('profile-page')
 
     if request.method == 'POST':
-        booking.delete()  # удалит и платёж из-за on_delete=models.CASCADE
+        booking.delete()
+        messages.success(request, "Бронирование удалено.")
         return redirect('profile-page')

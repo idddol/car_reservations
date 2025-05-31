@@ -21,11 +21,57 @@
 </form>
 
 <script>
+async function refreshAccessToken() {
+    const refresh = localStorage.getItem("refresh");
+    if (!refresh) return false;
+
+    const response = await fetch("/api/token/refresh/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh })
+    });
+
+    if (response.ok) {
+        const data = await response.json();
+        localStorage.setItem("access", data.access);
+        return true;
+    } else {
+        localStorage.clear();
+        window.location.href = "/api/site/login/";
+        return false;
+    }
+}
+
+async function secureFetch(url, options = {}) {
+    const access = localStorage.getItem("access");
+    const opts = {
+        ...options,
+        headers: {
+            ...options.headers,
+            "Authorization": `Bearer ${access}`
+        }
+    };
+    let res = await fetch(url, opts);
+
+    if (res.status === 401) {
+        const refreshed = await refreshAccessToken();
+        if (refreshed) {
+            const newAccess = localStorage.getItem("access");
+            opts.headers["Authorization"] = `Bearer ${newAccess}`;
+            res = await fetch(url, opts);
+        } else {
+            window.location.href = "/api/site/login/";
+        }
+    }
+
+    return res;
+}
+
 document.getElementById("bookingForm").addEventListener("submit", async (e) => {
     e.preventDefault();
 
     const token = localStorage.getItem("access");
-    const carId = parseInt(document.getElementById("bookingForm").dataset.carId);
+    const carId = document.getElementById("bookingForm").dataset.carId;
     const startDate = document.getElementById("start_date").value;
     const endDate = document.getElementById("end_date").value;
     const errorMessage = document.getElementById("errorMessage");
@@ -34,19 +80,21 @@ document.getElementById("bookingForm").addEventListener("submit", async (e) => {
         window.location.href = "/api/site/login/";
         return;
     }
+    const parsedCarId = parseInt(carId);
+    console.log("ID машины, переданный в запрос:", parsedCarId);  // 👈 отладка
 
-    const response = await fetch("/api/bookings/", {
+    const response = await secureFetch("/api/bookings/", {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`
         },
         body: JSON.stringify({
-            car: carId,
+            car: parseInt(carId),
             rental_start_date: startDate,
             rental_end_date: endDate
         })
     });
+
 
     if (response.ok) {
         const data = await response.json();
@@ -62,5 +110,6 @@ document.getElementById("bookingForm").addEventListener("submit", async (e) => {
     }
 });
 </script>
+
 {% endblock %}
 

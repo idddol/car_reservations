@@ -18,10 +18,30 @@
 <ul id="paymentList"><li>Загрузка...</li></ul>
 
 <script>
-const token = localStorage.getItem("access");
+async function refreshAccessToken() {
+    const refresh = localStorage.getItem("refresh");
+    if (!refresh) return false;
+
+    const response = await fetch("/api/token/refresh/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh })
+    });
+
+    if (response.ok) {
+        const data = await response.json();
+        localStorage.setItem("access", data.access);
+        return true;
+    } else {
+        localStorage.clear();
+        window.location.href = "/api/site/login/";
+        return false;
+    }
+}
 
 async function verifyToken() {
-    if (!token) {
+    const access = localStorage.getItem("access");
+    if (!access) {
         window.location.href = "/api/site/login/";
         return false;
     }
@@ -29,35 +49,53 @@ async function verifyToken() {
     const res = await fetch("/api/token/verify/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token })
+        body: JSON.stringify({ token: access })
     });
 
-    if (!res.ok) {
-        localStorage.clear();
-        window.location.href = "/api/site/login/";
-        return false;
+    if (res.ok) {
+        return true;
+    } else {
+        // access истёк — пробуем обновить
+        const refreshed = await refreshAccessToken();
+        return refreshed;
+    }
+}
+
+async function secureFetch(url, options = {}) {
+    const access = localStorage.getItem("access");
+    const opts = {
+        ...options,
+        headers: {
+            ...options.headers,
+            "Authorization": `Bearer ${access}`
+        }
+    };
+    let res = await fetch(url, opts);
+
+    if (res.status === 401) {
+        const refreshed = await refreshAccessToken();
+        if (refreshed) {
+            const newAccess = localStorage.getItem("access");
+            opts.headers["Authorization"] = `Bearer ${newAccess}`;
+            res = await fetch(url, opts);
+        } else {
+            window.location.href = "/api/site/login/";
+        }
     }
 
-    return true;
+    return res;
 }
 
 async function loadUser() {
-    const res = await fetch("/api/users/me/", {
-        headers: { "Authorization": `Bearer ${token}` }
-    });
-
+    const res = await secureFetch("/api/users/me/");
     const data = await res.json();
     document.getElementById("userName").innerText = data.name || "—";
     document.getElementById("userEmail").innerText = data.email || "—";
 }
 
 async function loadBookings() {
-    const bookingRes = await fetch("/api/bookings/", {
-        headers: { "Authorization": `Bearer ${token}` }
-    });
-    const paymentRes = await fetch("/api/payments/", {
-        headers: { "Authorization": `Bearer ${token}` }
-    });
+    const bookingRes = await secureFetch("/api/bookings/");
+    const paymentRes = await secureFetch("/api/payments/");
 
     const bookings = await bookingRes.json();
     const payments = await paymentRes.json();
@@ -69,29 +107,33 @@ async function loadBookings() {
         list.innerHTML = "<li>Бронирований нет</li>";
     } else {
         bookings.forEach(b => {
-            const payment = payments.find(p => p.booking == b.id);
-            const isPaid = ["paid", "completed"].includes(payment?.payment_status);
-            const paidStatus = isPaid ? "✅ оплачено" : "❌ не оплачено";
+            // Находим все платежи для этой брони
+            const related = payments.filter(p => p.booking === b.id);
+            const latestPayment = related.sort((a, b) => new Date(b.payment_date) - new Date(a.payment_date))[0];
+
+            const isPaid = latestPayment?.payment_status === "completed";
+            const payStatus = isPaid ? "✅ оплачено" : "❌ не оплачено";
+            const payLink = !isPaid ? `<br><a href="/api/site/payment/${b.id}/">💳 Оплатить</a>` : "";
 
             const item = document.createElement("li");
             item.innerHTML = `
                 <strong>${b.car.brand} ${b.car.model}</strong><br>
                 ${b.rental_start_date} → ${b.rental_end_date}<br>
                 Статус брони: ${b.order_status}<br>
-                Оплата: ${paidStatus}
-                 ${!isPaid ? `<br><a href="/api/site/payment/${b.id}/">💳 Оплатить</a>` : ""}
+                Оплата: ${payStatus}
+                ${payLink}
+                <br><button onclick="deleteBooking(${b.id})">🗑 Удалить</button>
             `;
             list.appendChild(item);
         });
     }
 }
 
-async function loadPayments() {
-    const res = await fetch("/api/payments/", {
-        headers: { "Authorization": `Bearer ${token}` }
-    });
 
+async function loadPayments() {
+    const res = await secureFetch("/api/payments/");
     const data = await res.json();
+
     const list = document.getElementById("paymentList");
     list.innerHTML = "";
 
@@ -103,6 +145,22 @@ async function loadPayments() {
             item.innerText = `${p.amount}₽ — ${p.payment_method} — ${p.payment_status}`;
             list.appendChild(item);
         });
+    }
+}
+
+async function deleteBooking(bookingId) {
+    if (!confirm("Удалить бронирование?")) return;
+
+    const res = await secureFetch(`/api/bookings/${bookingId}/`, {
+        method: "DELETE"
+    });
+
+    if (res.ok) {
+        alert("Бронирование удалено");
+        await loadBookings();
+        await loadPayments();
+    } else {
+        alert("Ошибка при удалении");
     }
 }
 
@@ -118,3 +176,6 @@ async function init() {
 init();
 </script>
 {% endblock %}
+
+
+

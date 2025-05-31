@@ -1,6 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import (CarViewSet, BookingViewSet, PaymentViewSet, UserViewSet, RegisterView, ChangePasswordView,
+from .views import (CarViewSet, BookingViewSet, PaymentViewSet, UserViewSet, CarImageViewSet, RegisterView, ChangePasswordView,
                     LogoutView,register_page, login_page, profile_page, cars_page, booking_page, payment_page, delete_booking)
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
@@ -13,6 +13,9 @@ router.register(r'cars', CarViewSet)
 router.register(r'bookings', BookingViewSet)
 router.register(r'payments', PaymentViewSet)
 router.register(r'users', UserViewSet)
+
+router.register(r'car-images', CarImageViewSet)
+
 
 urlpatterns = [
 

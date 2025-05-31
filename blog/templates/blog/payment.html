@@ -4,62 +4,107 @@
 {% block content %}
 <h2>Оплата бронирования</h2>
 
-{% if payment %}
-    <p><strong>Сумма:</strong> {{ payment.amount }} ₽</p>
-    <p><strong>Статус:</strong> {{ payment.get_status_display }}</p>
+<div id="paymentInfo">
+  {% if payment %}
+      <p><strong>Сумма:</strong> {{ payment.amount }} ₽</p>
+      <p><strong>Статус:</strong> {{ payment.payment_status }}</p>
+  {% else %}
+      <p>Платёж пока не создан.</p>
+  {% endif %}
+</div>
 
-    {% if payment.status != 'completed' %}
-    <form id="paymentForm">
-        <label for="method">Способ оплаты:</label>
-        <select id="method" required>
-            <option value="cash">Наличные</option>
-            <option value="card">Карта</option>
-            <option value="crypto">Криптовалюта</option>
-        </select>
-        <br><br>
-        <button type="submit">Оплатить</button>
-        <p id="message" style="color: green;"></p>
-    </form>
-    {% else %}
-        <p>Платёж уже завершён ✅</p>
-    {% endif %}
-
-{% else %}
-    <p>Платёж не найден.</p>
+{% if not payment or payment.payment_status != 'completed' %}
+<form id="paymentForm">
+    <label for="method">Выберите способ оплаты:</label>
+    <select id="method" required>
+        <option value="cash">Наличные</option>
+        <option value="card">Карта</option>
+        <option value="crypto">Криптовалюта</option>
+    </select>
+    <br><br>
+    <button type="submit">Оплатить</button>
+</form>
+<p id="message" style="color: green;"></p>
 {% endif %}
 
 <script>
-const form = document.getElementById('paymentForm');
-if (form) {
-    form.addEventListener('submit', async (e) => {
-        e.preventDefault();
+const bookingId = "{{ booking_id }}";
 
-        const method = document.getElementById('method').value;
-        const access = localStorage.getItem("access");
-
-        const response = await fetch(`/api/payments/{{ payment.id }}/`, {
-            method: "PATCH",
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${access}`
-            },
-            body: JSON.stringify({
-                method: method,
-                status: "completed"
-            })
-        });
-
-        const message = document.getElementById('message');
-        if (response.ok) {
-            message.innerText = "Платёж успешно завершён!";
-            setTimeout(() => {
-                window.location.href = "/api/site/profile/";
-            }, 1500);
-        } else {
-            message.style.color = "red";
-            message.innerText = "Ошибка при оплате.";
-        }
+async function refreshAccessToken() {
+    const refresh = localStorage.getItem("refresh");
+    if (!refresh) return false;
+    const res = await fetch("/api/token/refresh/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh })
     });
+    if (res.ok) {
+        const data = await res.json();
+        localStorage.setItem("access", data.access);
+        return true;
+    } else {
+        localStorage.clear();
+        window.location.href = "/api/site/login/";
+        return false;
+    }
 }
+
+async function secureFetch(url, options = {}) {
+    const access = localStorage.getItem("access");
+    const opts = {
+        ...options,
+        headers: {
+            ...options.headers,
+            "Authorization": `Bearer ${access}`,
+        }
+    };
+    let res = await fetch(url, opts);
+    if (res.status === 401) {
+        const refreshed = await refreshAccessToken();
+        if (refreshed) {
+            const newAccess = localStorage.getItem("access");
+            opts.headers["Authorization"] = `Bearer ${newAccess}`;
+            res = await fetch(url, opts);
+        } else {
+            window.location.href = "/api/site/login/";
+        }
+    }
+    return res;
+}
+
+document.getElementById("paymentForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const method = document.getElementById("method").value;
+
+    const response = await secureFetch("/api/payments/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            booking: bookingId,
+            payment_method: method,
+            payment_status: "completed"
+        })
+    });
+
+    const msg = document.getElementById("message");
+    const paymentInfo = document.getElementById("paymentInfo");
+
+    if (response.ok) {
+        const data = await response.json();
+        msg.style.color = "green";
+        msg.innerText = "Оплата прошла успешно!";
+
+        // Обновляем информацию о платеже
+        paymentInfo.innerHTML = `
+            <p><strong>Сумма:</strong> ${data.amount} ₽</p>
+            <p><strong>Статус:</strong> Оплачен ✅</p>
+        `;
+
+        document.getElementById("paymentForm").remove();
+    } else {
+        msg.style.color = "red";
+        msg.innerText = "Ошибка при оплате.";
+    }
+});
 </script>
 {% endblock %}

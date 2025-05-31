@@ -3,11 +3,17 @@
 # blog/serializers.py
 
 from rest_framework import serializers
-from .models import Car, Booking, Payment, User
+from .models import Car, Booking, Payment, User, CarImage
 from django.utils import timezone
 
+class CarImageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CarImage
+        fields = ['id', 'image_url', 'car']
 
 class CarSerializer(serializers.ModelSerializer):
+    images = CarImageSerializer(many=True, read_only=True)
+
     class Meta:
         model = Car
         fields = '__all__'
@@ -17,7 +23,7 @@ class CarShortSerializer(serializers.ModelSerializer):
         model = Car
         fields = ['brand', 'model']
 
-class BookingSerializer(serializers.ModelSerializer):
+class BookingWriteSerializer(serializers.ModelSerializer):
     car = serializers.PrimaryKeyRelatedField(queryset=Car.objects.all())
 
     class Meta:
@@ -30,18 +36,21 @@ class BookingSerializer(serializers.ModelSerializer):
             'user': {'required': False},
         }
 
+    def validate(self, data):
+        start_date = data['rental_start_date']
+        end_date = data['rental_end_date']
+        if start_date >= end_date:
+            raise serializers.ValidationError("Арендовать автомобиль можно на срок, составляющий минимум 1 день.")
+        return data
+
     def create(self, validated_data):
         validated_data['order_date'] = timezone.now().date()
         validated_data['order_status'] = 'pending'
-
         request = self.context.get('request')
         if request and hasattr(request, 'user'):
             validated_data['user'] = request.user
 
         car = validated_data.get('car')
-        if car is None:
-            raise serializers.ValidationError("Не передана машина для бронирования")
-
         start_date = validated_data['rental_start_date']
         end_date = validated_data['rental_end_date']
         days = (end_date - start_date).days
@@ -49,6 +58,13 @@ class BookingSerializer(serializers.ModelSerializer):
 
         return super().create(validated_data)
 
+
+class BookingReadSerializer(serializers.ModelSerializer):
+    car = CarSerializer(read_only=True)
+
+    class Meta:
+        model = Booking
+        fields = '__all__'
 
 
 class PaymentSerializer(serializers.ModelSerializer):
@@ -72,8 +88,9 @@ class PaymentSerializer(serializers.ModelSerializer):
         # Устанавливаем текущую дату как order_date
         validated_data['payment_date'] = timezone.now().date()
 
-        # Устанавливаем статус по умолчанию
-        validated_data['payment_status'] = 'uncompleted'
+        # Устанавливаем статус, только если он явно не передан из запроса
+        if 'payment_status' not in validated_data:
+            validated_data['payment_status'] = 'uncompleted'
         validated_data['amount'] = validated_data['booking'].rental_cost
 
         return super().create(validated_data)
@@ -84,5 +101,5 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'name', 'email', 'password']
+        fields = ['id', 'name', 'email', 'password', 'is_staff']
 

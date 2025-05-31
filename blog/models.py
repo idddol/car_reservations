@@ -46,9 +46,14 @@ class Car(models.Model):
     description = models.TextField()
     price = models.IntegerField()
     categories = models.ManyToManyField(Category)
+    image = models.URLField(max_length=500, null=True, blank=True)
 
     def __str__(self):
         return f"{self.brand} {self.model}"
+
+class CarImage(models.Model):
+    car = models.ForeignKey(Car, related_name='images', on_delete=models.CASCADE)
+    image_url = models.URLField(max_length=500)
 
 
 class Booking(models.Model):

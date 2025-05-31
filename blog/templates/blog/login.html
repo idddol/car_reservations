@@ -36,7 +36,17 @@ document.getElementById("loginForm").addEventListener("submit", async function(e
     if (response.ok) {
         localStorage.setItem("access", data.access);
         localStorage.setItem("refresh", data.refresh);
-        window.location.href = "/api/site/profile/"; // переходим в личный кабинет
+
+        // Получаем инфу о пользователе
+        const userRes = await fetch("/api/users/me/", {
+            headers: {
+                Authorization: "Bearer " + data.access
+            }
+        });
+        const userData = await userRes.json();
+        localStorage.setItem("is_staff", userData.is_staff);  // ✅ сохраняем флаг
+
+        window.location.href = "/api/site/profile/";
     } else {
         document.getElementById("loginError").innerText = data.detail || "Ошибка входа";
     }
